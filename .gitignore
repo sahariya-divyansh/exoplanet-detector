@@ -17,22 +17,25 @@ __pycache__/
 .env
 .env.*
 
-# Large Data files & datasets (ignore all data folder contents except .gitkeep)
-data/*
-!data/.gitkeep
+# Large Data files & datasets
+data/raw_lightcurves/
+data/processed/
 *.fits
 *.fits.gz
 *.csv
 *.tsv
 *.npy
 *.npz
-*.h5
-*.hdf5
 
-# Model weights, checkpoints & serialized models (ignore all models folder contents except .gitkeep)
-models/*
-!models/.gitkeep
+# Model weights, checkpoints & serialized models (ignore binary weights/artifacts, keep scripts)
 *.keras
 *.pb
 *.ckpt
+*.h5
 checkpoint
+models/**/*.keras
+models/**/*.pb
+models/**/*.ckpt
+models/**/*.h5
+models/**/variables/
+models/**/assets/
