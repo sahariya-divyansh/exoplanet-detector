@@ -1,0 +1,7 @@
+lightkurve
+tensorflow
+scikit-learn
+matplotlib
+pandas
+numpy
+gradio

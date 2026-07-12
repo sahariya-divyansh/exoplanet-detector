@@ -1,0 +1,38 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Environments
+.env
+.env.*
+
+# Large Data files & datasets (ignore all data folder contents except .gitkeep)
+data/*
+!data/.gitkeep
+*.fits
+*.fits.gz
+*.csv
+*.tsv
+*.npy
+*.npz
+*.h5
+*.hdf5
+
+# Model weights, checkpoints & serialized models (ignore all models folder contents except .gitkeep)
+models/*
+!models/.gitkeep
+*.keras
+*.pb
+*.ckpt
+checkpoint
