@@ -40,3 +40,4 @@ models/**/*.ckpt
 models/**/*.h5
 models/**/variables/
 models/**/assets/
+models/*.png
