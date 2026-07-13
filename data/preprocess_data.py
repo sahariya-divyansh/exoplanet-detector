@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.signal import savgol_filter
+import lightkurve as lk
 from sklearn.model_selection import train_test_split
 import warnings
 
@@ -30,24 +30,26 @@ def preprocess_lightcurve(filepath):
     if len(flux_clean) < 10:
         raise ValueError(f"Too few data points ({len(flux_clean)}) after outlier removal.")
         
-    # 2. Flattening (Savitzky-Golay filter to remove long-term trends)
+    # 2. Flattening (using lightkurve's robust flatten)
     if len(flux_clean) < 101:
         kepid_name = os.path.basename(filepath).split('_')[0]
         print(f"  [WARN] KIC {kepid_name} light curve too short ({len(flux_clean)}) for Savitzky-Golay window of 101. Skipping flattening.")
         flux_flattened = flux_clean / np.median(flux_clean)
     else:
-        trend = savgol_filter(flux_clean, window_length=101, polyorder=2)
-        flux_flattened = flux_clean / trend
+        lc = lk.LightCurve(time=time_clean, flux=flux_clean)
+        flat_lc = lc.flatten(window_length=101, polyorder=2)
+        flux_flattened = np.array(flat_lc.flux.value, dtype=float)
         
     # Sanity check noise level before normalization
     std_flat = np.std(flux_flattened)
     kepid_name = os.path.basename(filepath).split('_')[0]
     print(f"  [SANITY CHECK] KIC {kepid_name}: std of flattened flux (before norm) = {std_flat:.6f}")
     
-    # 3. Normalization (Min-Max scale to 0-1 range)
-    f_min = np.min(flux_flattened)
-    f_max = np.max(flux_flattened)
-    flux_normalized = (flux_flattened - f_min) / (f_max - f_min + 1e-8)
+    # 3. Normalization (Robust scaling preserving relative noise: (flux - median) / (10 * std), clipped to [-1, 1], rescaled to [0, 1])
+    median_flat = np.median(flux_flattened)
+    flux_norm = (flux_flattened - median_flat) / (10 * std_flat + 1e-8)
+    flux_clipped = np.clip(flux_norm, -1.0, 1.0)
+    flux_normalized = (flux_clipped + 1.0) / 2.0
     
     # 4. Interpolation & Resampling to a fixed length of 2000 points
     new_time = np.linspace(time_clean.min(), time_clean.max(), 2000)
@@ -80,6 +82,7 @@ def save_comparison_plot(raw_time, raw_flux, clean_time, clean_flux, resampled_t
     ax2.set_title('Processed & Flattened Light Curve (2000 Uniform Points)', fontsize=10, fontweight='semibold')
     ax2.set_xlabel('Time (Days)', fontsize=9)
     ax2.set_ylabel('Normalized Flux (0-1)', fontsize=9)
+    ax2.set_ylim(-0.05, 1.05)  # Consistently fixed y-axis range to compare across stars
     ax2.legend(loc='upper right')
     
     plt.tight_layout()
@@ -109,8 +112,20 @@ def main():
     processed_data = []
     processed_labels = []
     
-    # Count of stars we want to save plots for
-    plot_indices = [0, len(df_labels) // 2, len(df_labels) - 1] # First, middle, and last star
+    # Identify index for KIC 12470954 specifically
+    kepid_to_find = 12470954
+    kepid_indices = df_labels[df_labels['kepid'] == kepid_to_find].index.tolist()
+    
+    plot_indices = []
+    if kepid_indices:
+        plot_indices.append(kepid_indices[0])
+    else:
+        plot_indices.append(0)
+        
+    plot_indices.append(len(df_labels) // 2)
+    plot_indices.append(len(df_labels) - 1)
+    plot_indices = list(set(plot_indices)) # Keep unique indices
+    
     plots_saved = 0
     
     print("\nPreprocessing light curves...")
