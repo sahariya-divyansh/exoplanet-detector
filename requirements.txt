@@ -1,7 +1,8 @@
 lightkurve
-tensorflow
+tensorflow-cpu
 scikit-learn
 matplotlib
 pandas
 numpy
 gradio
+astropy
