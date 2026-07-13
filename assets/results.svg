@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="420" viewBox="0 0 1100 420" role="img" aria-labelledby="title desc">
+  <title id="title">Model Results Summary</title>
+  <desc id="desc">A compact bar chart displaying test accuracy 0.6333, precision 0.5833, recall 0.9333, F1 0.7179, and ROC-AUC 0.7156.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#06111f"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" x2="1">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="420" rx="28" fill="url(#bg)"/>
+  <text x="64" y="60" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#f8fafc">Prototype Test Metrics</text>
+  <text x="64" y="90" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15" fill="#cbd5e1">Trained on a balanced 400-star Kepler/KOI dataset</text>
+
+  <g font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" fill="#e2e8f0">
+    <text x="64" y="145">Test Accuracy</text>
+    <rect x="210" y="124" width="570" height="28" rx="14" fill="#1e293b"/>
+    <rect x="210" y="124" width="361" height="28" rx="14" fill="url(#bar)"/>
+    <text x="805" y="145" font-weight="700" fill="#f8fafc">0.6333</text>
+
+    <text x="64" y="195">Precision</text>
+    <rect x="210" y="174" width="570" height="28" rx="14" fill="#1e293b"/>
+    <rect x="210" y="174" width="332" height="28" rx="14" fill="url(#bar)"/>
+    <text x="805" y="195" font-weight="700" fill="#f8fafc">0.5833</text>
+
+    <text x="64" y="245">Recall</text>
+    <rect x="210" y="224" width="570" height="28" rx="14" fill="#1e293b"/>
+    <rect x="210" y="224" width="532" height="28" rx="14" fill="url(#bar)"/>
+    <text x="805" y="245" font-weight="700" fill="#f8fafc">0.9333</text>
+
+    <text x="64" y="295">F1 Score</text>
+    <rect x="210" y="274" width="570" height="28" rx="14" fill="#1e293b"/>
+    <rect x="210" y="274" width="409" height="28" rx="14" fill="url(#bar)"/>
+    <text x="805" y="295" font-weight="700" fill="#f8fafc">0.7179</text>
+
+    <text x="64" y="345">ROC-AUC</text>
+    <rect x="210" y="324" width="570" height="28" rx="14" fill="#1e293b"/>
+    <rect x="210" y="324" width="408" height="28" rx="14" fill="url(#bar)"/>
+    <text x="805" y="345" font-weight="700" fill="#f8fafc">0.7156</text>
+  </g>
+
+  <rect x="890" y="124" width="146" height="228" rx="18" fill="#0f172a" stroke="#334155"/>
+  <text x="963" y="168" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17" font-weight="700" fill="#f8fafc">Honest note</text>
+  <text x="963" y="205" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#cbd5e1">Small dataset</text>
+  <text x="963" y="225" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#cbd5e1">hackathon</text>
+  <text x="963" y="245" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#cbd5e1">prototype</text>
+  <text x="963" y="288" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#93c5fd">Expected to</text>
+  <text x="963" y="308" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#93c5fd">improve with</text>
+  <text x="963" y="328" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#93c5fd">more KOI data</text>
+</svg>
