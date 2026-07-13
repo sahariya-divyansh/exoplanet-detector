@@ -31,15 +31,18 @@ def preprocess_lightcurve(filepath):
         raise ValueError(f"Too few data points ({len(flux_clean)}) after outlier removal.")
         
     # 2. Flattening (Savitzky-Golay filter to remove long-term trends)
-    # Window size should be ~401, but adjusted down if array is shorter
-    window_len = 401
-    if len(flux_clean) <= window_len:
-        window_len = len(flux_clean) // 2 * 2 - 1  # Largest odd number smaller than len
-        if window_len < 3:
-            window_len = 3
-            
-    trend = savgol_filter(flux_clean, window_length=window_len, polyorder=2)
-    flux_flattened = flux_clean / trend
+    if len(flux_clean) < 101:
+        kepid_name = os.path.basename(filepath).split('_')[0]
+        print(f"  [WARN] KIC {kepid_name} light curve too short ({len(flux_clean)}) for Savitzky-Golay window of 101. Skipping flattening.")
+        flux_flattened = flux_clean / np.median(flux_clean)
+    else:
+        trend = savgol_filter(flux_clean, window_length=101, polyorder=2)
+        flux_flattened = flux_clean / trend
+        
+    # Sanity check noise level before normalization
+    std_flat = np.std(flux_flattened)
+    kepid_name = os.path.basename(filepath).split('_')[0]
+    print(f"  [SANITY CHECK] KIC {kepid_name}: std of flattened flux (before norm) = {std_flat:.6f}")
     
     # 3. Normalization (Min-Max scale to 0-1 range)
     f_min = np.min(flux_flattened)
