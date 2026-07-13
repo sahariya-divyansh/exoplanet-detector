@@ -91,10 +91,10 @@ def detect_exoplanet(star_name):
         
         if is_planet:
             confidence = prob * 100
-            result_text = f"🪐 PLANET DETECTED\nConfidence: {confidence:.2f}% (Probability: {prob:.4f})"
+            result_text = f"PLANET DETECTED\nConfidence: {confidence:.2f}% (Probability: {prob:.4f})"
         else:
             confidence = (1.0 - prob) * 100
-            result_text = f"✨ No planet detected\nConfidence: {confidence:.2f}% (Probability: {prob:.4f})"
+            result_text = f"No planet detected\nConfidence: {confidence:.2f}% (Probability: {prob:.4f})"
             
         # Build matplotlib 3-panel plot
         print("Plotting figures...")
@@ -108,7 +108,6 @@ def detect_exoplanet(star_name):
         ax1.legend()
         
         # Panel 2: Denoised light curve (0-1 Normalized)
-        # Plot both the normalized resampled input and the denoised reconstruction
         ax2.plot(resampled_time, resampled_flux, color='#e74c3c', alpha=0.5, linewidth=0.8, label='Normalized Input')
         ax2.plot(resampled_time, flux_denoised, color='#2980b9', linewidth=1.5, label='Denoised Signal')
         ax2.set_title("Denoised Light Curve (Normalized 0-1 scale)", fontsize=11, fontweight='semibold')
@@ -126,12 +125,9 @@ def detect_exoplanet(star_name):
             phase = (clean_time % best_period) / best_period
             
             ax3.scatter(phase, clean_flux, color='#8e44ad', s=3, alpha=0.4, label='Data points')
-            # Add a smoothed trend line on phase-folded plot for visual aid
-            # Sort phase and plot running average
             sort_idx = np.argsort(phase)
             phase_sorted = phase[sort_idx]
             flux_sorted = clean_flux[sort_idx]
-            # Simple rolling mean using pandas
             smoothed_flux = pd.Series(flux_sorted).rolling(window=max(2, len(flux_sorted)//20), center=True).mean().values
             ax3.plot(phase_sorted, smoothed_flux, color='#2c3e50', linewidth=1.5, label='Smoothed Trend')
             
@@ -149,23 +145,178 @@ def detect_exoplanet(star_name):
         return result_text, fig
         
     except Exception as e:
-        # Clean up temp file on error
         if os.path.exists(temp_csv_path):
             os.remove(temp_csv_path)
         print(f"[ERROR] failed: {e}")
         return f"Error executing exoplanet detection pipeline: {e}", None
 
-# Create Gradio App with custom layout and theme
-with gr.Blocks(theme=gr.themes.Default(primary_hue="blue", secondary_hue="indigo")) as demo:
+# HTML Header scripts for Vanta.js animated background
+head_html = """
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.fog.min.js"></script>
+<script>
+// Force Gradio into Dark Mode to enable high-contrast light text on dark background
+document.documentElement.classList.add('dark');
+
+document.addEventListener('DOMContentLoaded', function() {
+    function initVanta() {
+        var el = document.getElementById('vanta-bg');
+        if (el && window.VANTA) {
+            window.VANTA.FOG({
+                el: "#vanta-bg",
+                mouseControls: true,
+                touchControls: true,
+                gyroControls: false,
+                minHeight: 200.00,
+                minWidth: 200.00,
+                highlightColor: 0x0f172a,
+                midtoneColor: 0x020617,
+                lowlightColor: 0x000000,
+                baseColor: 0x000000,
+                blurFactor: 0.60,
+                speed: 1.50,
+                zoom: 1.00
+            });
+        } else {
+            setTimeout(initVanta, 100);
+        }
+    }
+    initVanta();
+});
+</script>
+<style>
+/* Font import for premium typography */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Outfit:wght@400;600;800&display=swap');
+</style>
+"""
+
+# Custom CSS for glassmorphism styling
+custom_css = """
+body {
+    background: transparent !important;
+}
+
+/* Page container width and margins */
+.gradio-container {
+    background: transparent !important;
+    max-width: 1200px !important;
+    margin: 0 auto !important;
+    padding: 2.5rem !important;
+}
+
+/* Glassmorphism styling for all card elements */
+.block, .gr-box, .gr-input, .gr-button, .gr-form, .gr-panel, .gr-card, .gr-label, .gr-plot, .examples {
+    border-radius: 16px !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* Force text colors inside inputs, outputs, labels, and lists to be white */
+.block label span, .block span, .block div, .block p, .block input, .block textarea, .block li, .block ol, .block h1, .block h2, .block h3, .block label {
+    color: #ffffff !important;
+}
+
+/* Fix specific colors for form labels and descriptions */
+.block .info, .block .label-content {
+    color: #cccccc !important;
+}
+
+/* Text fields inside the glass blocks */
+input[type="text"], textarea {
+    background: rgba(0, 0, 0, 0.5) !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 8px !important;
+    color: #ffffff !important;
+}
+
+/* Placeholder color styling */
+input::placeholder, textarea::placeholder {
+    color: #aaaaaa !important;
+}
+
+/* Center main header and give text glow */
+#main-header {
+    text-align: center !important;
+    margin-bottom: 2.5rem !important;
+    color: #ffffff !important;
+    text-shadow: 0 0 15px rgba(59, 130, 246, 0.5), 0 0 30px rgba(59, 130, 246, 0.3) !important;
+}
+
+h1, h2, h3 {
+    text-align: center !important;
+    color: #ffffff !important;
+    font-family: 'Outfit', 'Inter', sans-serif !important;
+}
+
+h1 {
+    font-size: 2.5rem !important;
+    font-weight: 800 !important;
+    margin-top: 0.5rem !important;
+    background: linear-gradient(135deg, #ffffff 0%, #93c5fd 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Style main CTA button */
+button.primary {
+    background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.25) !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    border-radius: 12px !important;
+    transition: all 0.3s ease !important;
+    cursor: pointer !important;
+}
+
+button.primary:hover {
+    background: linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%) !important;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.7) !important;
+    transform: translateY(-1.5px) !important;
+}
+
+/* Examples buttons container styling and hover effects */
+.examples button, .gr-button {
+    border-radius: 12px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    color: #e2e8f0 !important;
+    transition: all 0.2s ease !important;
+}
+
+.examples button:hover, .gr-button:hover {
+    background: rgba(255, 255, 255, 0.2) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    color: #ffffff !important;
+}
+
+/* Matplotlib plots container */
+.gr-plot, [data-testid="plot-container"] {
+    border-radius: 16px !important;
+    overflow: hidden !important;
+    background: #ffffff !important; /* Keep graph background white for contrast */
+}
+"""
+
+with gr.Blocks(head=head_html, css=custom_css, theme=gr.themes.Default(primary_hue="blue", secondary_hue="indigo")) as demo:
+    # Full-page fixed background div for Vanta.js
+    gr.HTML('<div id="vanta-bg" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: -1;"></div>')
+    
+    # Title and description text
     gr.Markdown(
         """
-        # 🪐 Exoplanet Transit Detection AI Pipeline
-        ### Built for **Bharatiya Antariksh Hackathon 2026**
+        # Exoplanet Transit Detection AI Pipeline
+        ### Built for Bharatiya Antariksh Hackathon 2026
+        
         This tool implements an end-to-end deep learning pipeline to detect exoplanets from live Kepler space telescope data.
-        1. **Live Download**: Fetches high-precision raw light curves from NASA servers via *lightkurve*.
-        2. **Denoising**: Passes the preprocessed curves through a **1D Convolutional Autoencoder** to filter out stellar noise and cosmic rays.
-        3. **Classification**: Evaluates the denoised curve using a **1D CNN Binary Classifier** to calculate planet transit probabilities.
-        """
+        
+        1. Live Download: Fetches high-precision raw light curves from NASA servers via lightkurve.
+        2. Denoising: Passes the preprocessed curves through a 1D Convolutional Autoencoder to filter out stellar noise and cosmic rays.
+        3. Classification: Evaluates the denoised curve using a 1D CNN Binary Classifier to calculate planet transit probabilities.
+        """,
+        elem_id="main-header"
     )
     
     with gr.Row():
@@ -178,7 +329,7 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="blue", secondary_hue="indigo
             
             submit_btn = gr.Button("Analyze Live Data", variant="primary")
             
-            # Predefined examples
+            # Example stars
             gr.Examples(
                 examples=["Kepler-452", "Kepler-10", "KIC 3733346"],
                 inputs=input_text,
@@ -196,5 +347,4 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="blue", secondary_hue="indigo
     )
 
 if __name__ == "__main__":
-    # Launch with public share link active
     demo.launch(share=True)
