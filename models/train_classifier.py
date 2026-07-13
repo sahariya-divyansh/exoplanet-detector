@@ -6,6 +6,7 @@ import tensorflow as tf
 from tensorflow.keras import layers, Model
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.utils.class_weight import compute_class_weight
 import warnings
 
 # Suppress warnings
@@ -15,60 +16,73 @@ warnings.filterwarnings("ignore")
 np.random.seed(42)
 tf.random.set_seed(42)
 
-def build_transformer_classifier():
+def build_cnn_classifier():
     """
-    Builds a Transformer-based binary classifier for exoplanet detection.
+    Builds a simple 1D CNN binary classifier for exoplanet detection.
     """
     inputs = layers.Input(shape=(2000, 1))
     
-    # Conv1D first to generate local feature embeddings
-    x = layers.Conv1D(filters=32, kernel_size=3, padding='same', activation='relu')(inputs)
+    # Conv1D(16) -> MaxPool -> Conv1D(32) -> MaxPool -> Conv1D(64) -> GlobalAveragePooling1D
+    x = layers.Conv1D(filters=16, kernel_size=3, padding='same', activation='relu')(inputs)
+    x = layers.MaxPooling1D(pool_size=2, padding='same')(x)
     
-    # Downsample sequence from 2000 to 250 to speed up MultiHeadAttention computation
-    x = layers.MaxPooling1D(pool_size=8, padding='same')(x)
+    x = layers.Conv1D(filters=32, kernel_size=3, padding='same', activation='relu')(x)
+    x = layers.MaxPooling1D(pool_size=2, padding='same')(x)
     
-    # Transformer Block 1
-    # MultiHeadAttention + Residual Connection + LayerNormalization
-    attn_1 = layers.MultiHeadAttention(num_heads=4, key_dim=32)(x, x)
-    x = layers.Add()([x, attn_1])
-    x = layers.LayerNormalization(epsilon=1e-6)(x)
+    x = layers.Conv1D(filters=64, kernel_size=3, padding='same', activation='relu')(x)
     
-    # Transformer Block 2
-    # MultiHeadAttention + Residual Connection + LayerNormalization
-    attn_2 = layers.MultiHeadAttention(num_heads=4, key_dim=32)(x, x)
-    x = layers.Add()([x, attn_2])
-    x = layers.LayerNormalization(epsilon=1e-6)(x)
-    
-    # Global Pooling to summarize sequence
     x = layers.GlobalAveragePooling1D()(x)
     
-    # Dense Layers for classification with Dropout for regularization
-    x = layers.Dense(64, activation='relu')(x)
-    x = layers.Dropout(0.1)(x)
+    # Dense(32) -> Dropout(0.3) -> Dense(1, sigmoid)
     x = layers.Dense(32, activation='relu')(x)
-    x = layers.Dropout(0.1)(x)
+    x = layers.Dropout(0.3)(x)
     
-    # Output Layer
     outputs = layers.Dense(1, activation='sigmoid')(x)
     
-    model = Model(inputs, outputs, name="Transformer_Classifier")
+    model = Model(inputs, outputs, name="CNN_Classifier")
     
-    # Track accuracy, precision, and recall
     metrics = [
         'accuracy',
         tf.keras.metrics.Precision(name='precision'),
         tf.keras.metrics.Recall(name='recall')
     ]
     
+    # Lower learning rate (0.0005) as requested
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=5e-4),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
         loss='binary_crossentropy',
         metrics=metrics
     )
     return model
 
+def augment_light_curve(x):
+    """
+    Data augmentation helper: Time shifts (roll), tiny Gaussian noise, 
+    and slight amplitude rescaling.
+    x shape: (2000, 1) or (2000,)
+    """
+    x_aug = np.copy(x)
+    
+    # 1. Time shift (roll) by a small random number of indices (e.g. -150 to 150)
+    shift = np.random.randint(-150, 150)
+    x_aug = np.roll(x_aug, shift, axis=0)
+    
+    # 2. Add small random Gaussian noise
+    noise_std = np.random.uniform(0.001, 0.005)
+    noise = np.random.normal(0, noise_std, x_aug.shape)
+    x_aug += noise
+    
+    # 3. Rescale amplitude deviation from median slightly
+    median = np.median(x_aug)
+    scale = np.random.uniform(0.95, 1.05)
+    x_aug = (x_aug - median) * scale + median
+    
+    # Clip back to [0.0, 1.0]
+    x_aug = np.clip(x_aug, 0.0, 1.0)
+    return x_aug
+
 def main():
-    print("--- Exoplanet AI Hackathon: Transformer Classifier Training ---")
+    print("--- Exoplanet AI Hackathon: CNN Classifier Training ---")
     
     # 1. Load splits
     processed_dir = os.path.join("data", "processed")
@@ -91,6 +105,24 @@ def main():
     X_test = np.load(X_test_path)
     y_test = np.load(y_test_path)
     
+    # STEP 1: Sanity Check Data Alignment
+    print("\n" + "="*50)
+    print("STEP 1: SANITY CHECK DATA ALIGNMENT")
+    print("="*50)
+    mean_label_1 = np.mean(X_train[y_train == 1])
+    mean_label_0 = np.mean(X_train[y_train == 0])
+    min_label_1 = np.min(X_train[y_train == 1])
+    min_label_0 = np.min(X_train[y_train == 0])
+    
+    print(f"y_train shape:                     {y_train.shape}")
+    print(f"y_train label distribution (1/0):  {(y_train == 1).sum()} / {(y_train == 0).sum()}")
+    print(f"y_train first 20 values:           {y_train[:20].tolist()}")
+    print(f"Confirmed stars (1) - Mean Flux:   {mean_label_1:.6f} | Min Flux: {min_label_1:.6f}")
+    print(f"Control stars (0)   - Mean Flux:   {mean_label_0:.6f} | Min Flux: {min_label_0:.6f}")
+    print(f"Mean Flux Difference (0 - 1):      {mean_label_0 - mean_label_1:.6f}")
+    print(f"Min Flux Difference (0 - 1):       {mean_label_0 - min_label_1:.6f}")
+    print("="*50 + "\n")
+    
     # 2. Load trained denoiser
     denoiser_path = os.path.join("models", "saved_models", "denoiser.keras")
     if not os.path.exists(denoiser_path):
@@ -106,14 +138,45 @@ def main():
     X_val_denoised = denoiser.predict(X_val[..., np.newaxis], batch_size=32, verbose=0)
     X_test_denoised = denoiser.predict(X_test[..., np.newaxis], batch_size=32, verbose=0)
     
-    print(f"Denoised data shapes:")
-    print(f"  Train: {X_train_denoised.shape}")
-    print(f"  Val:   {X_val_denoised.shape}")
-    print(f"  Test:  {X_test_denoised.shape}")
+    # STEP 3: Data Augmentation
+    print("Performing data augmentation on training set (3x size)...")
+    X_train_augmented = []
+    y_train_augmented = []
     
-    # 3. Build Classifier
-    classifier = build_transformer_classifier()
+    for i in range(len(X_train_denoised)):
+        # 1. Original denoised curve
+        X_train_augmented.append(X_train_denoised[i])
+        y_train_augmented.append(y_train[i])
+        # 2. Augmented copy 1
+        X_train_augmented.append(augment_light_curve(X_train_denoised[i]))
+        y_train_augmented.append(y_train[i])
+        # 3. Augmented copy 2
+        X_train_augmented.append(augment_light_curve(X_train_denoised[i]))
+        y_train_augmented.append(y_train[i])
+        
+    X_train_augmented = np.array(X_train_augmented)
+    y_train_augmented = np.array(y_train_augmented)
+    
+    # Center all dataset splits (subtract 0.5 to shift baseline from 0.5 to 0.0)
+    # This prevents baseline values from washing out the localized transit activations in GlobalAveragePooling1D
+    print("Centering datasets around 0.0...")
+    X_train_final = X_train_augmented - 0.5
+    X_val_final = X_val_denoised - 0.5
+    X_test_final = X_test_denoised - 0.5
+    
+    print(f"Data shapes after denoising, augmentation, and centering:")
+    print(f"  Train Set: {X_train_final.shape} | Labels: {y_train_augmented.shape}")
+    print(f"  Val Set:   {X_val_final.shape} | Labels: {y_val.shape}")
+    print(f"  Test Set:  {X_test_final.shape} | Labels: {y_test.shape}")
+    
+    # STEP 2: Build CNN Classifier
+    classifier = build_cnn_classifier()
     classifier.summary()
+    
+    # Compute class weights (even though balanced, as safety net)
+    class_weights = compute_class_weight('balanced', classes=np.unique(y_train_augmented), y=y_train_augmented)
+    class_weight_dict = dict(enumerate(class_weights))
+    print(f"Computed class weights: {class_weight_dict}")
     
     # Set callbacks
     callbacks = [
@@ -121,27 +184,43 @@ def main():
         ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=6, min_lr=1e-6, verbose=1)
     ]
     
-    # 4. Train model
+    # Train model (epochs=60, batch_size=8 as requested)
     epochs = 60
-    batch_size = 16
-    print(f"\nTraining Transformer classifier for up to {epochs} epochs...")
+    batch_size = 8
+    print(f"\nTraining CNN classifier for up to {epochs} epochs...")
     history = classifier.fit(
-        X_train_denoised, y_train,
-        validation_data=(X_val_denoised, y_val),
+        X_train_final, y_train_augmented,
+        validation_data=(X_val_final, y_val),
         epochs=epochs,
         batch_size=batch_size,
+        class_weight=class_weight_dict,
         callbacks=callbacks,
         verbose=1
     )
     
     # 5. Evaluate on test set
     print("\nEvaluating model on the held-out test set...")
-    test_eval = classifier.evaluate(X_test_denoised, y_test, batch_size=batch_size, verbose=0)
+    test_eval = classifier.evaluate(X_test_final, y_test, batch_size=32, verbose=0)
     loss = test_eval[0]
     accuracy = test_eval[1]
     precision = test_eval[2]
     recall = test_eval[3]
     f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
+    
+    # Probability distribution check (STEP 4)
+    y_pred = classifier.predict(X_test_final, batch_size=32, verbose=0)
+    y_pred_probs = y_pred.flatten()
+    
+    print("\n" + "="*50)
+    print("STEP 4: PREDICTED PROBABILITY DISTRIBUTION ON TEST SET")
+    print("="*50)
+    print(f"  Min probability:  {np.min(y_pred_probs):.6f}")
+    print(f"  Max probability:  {np.max(y_pred_probs):.6f}")
+    print(f"  Mean probability: {np.mean(y_pred_probs):.6f}")
+    print(f"  Std deviation:    {np.std(y_pred_probs):.6f}")
+    deciles = np.percentile(y_pred_probs, np.arange(10, 100, 10))
+    print(f"  Deciles (10th to 90th percentile): {[round(d, 4) for d in deciles]}")
+    print("="*50)
     
     print("\n" + "="*50)
     print("TEST EVALUATION PERFORMANCE")
@@ -153,9 +232,7 @@ def main():
     print("="*50)
     
     # Confusion Matrix
-    y_pred = classifier.predict(X_test_denoised, batch_size=batch_size, verbose=0)
     y_pred_bin = (y_pred >= 0.5).astype(int).flatten()
-    
     cm = confusion_matrix(y_test, y_pred_bin)
     print("\nConfusion Matrix:")
     print(f"  True Negatives (False Positives): {cm[0, 0]}")
@@ -171,7 +248,7 @@ def main():
            yticks=np.arange(cm.shape[0]),
            xticklabels=['False Positive (0)', 'Confirmed (1)'],
            yticklabels=['False Positive (0)', 'Confirmed (1)'],
-           title='Classifier Confusion Matrix (Test Set)',
+           title='CNN Classifier Confusion Matrix (Test Set)',
            ylabel='True Label',
            xlabel='Predicted Label')
     
