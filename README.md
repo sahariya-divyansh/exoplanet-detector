@@ -1,3 +1,15 @@
+---
+title: Exoplanet Detector
+emoji: 👀
+colorFrom: red
+colorTo: pink
+sdk: gradio
+sdk_version: 6.20.0
+python_version: '3.12'
+app_file: app.py
+pinned: false
+---
+
 # AI Exoplanet Transit Detection Pipeline
 
 An end-to-end deep learning pipeline that detects exoplanets from noisy Kepler space telescope light curve data.
