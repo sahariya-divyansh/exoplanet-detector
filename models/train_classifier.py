@@ -5,7 +5,17 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras import layers, Model
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import (
+    confusion_matrix, 
+    classification_report, 
+    roc_auc_score, 
+    roc_curve, 
+    precision_recall_fscore_support,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score
+)
 from sklearn.utils.class_weight import compute_class_weight
 import warnings
 
@@ -19,6 +29,7 @@ tf.random.set_seed(42)
 def build_cnn_classifier():
     """
     Builds a simple 1D CNN binary classifier for exoplanet detection.
+    Includes L2 regularization (0.001) and increased dropout (0.4) to reduce overfitting.
     """
     inputs = layers.Input(shape=(2000, 1))
     
@@ -33,11 +44,19 @@ def build_cnn_classifier():
     
     x = layers.GlobalAveragePooling1D()(x)
     
-    # Dense(32) -> Dropout(0.3) -> Dense(1, sigmoid)
-    x = layers.Dense(32, activation='relu')(x)
-    x = layers.Dropout(0.3)(x)
+    # Dense(32) -> Dropout(0.4) -> Dense(1, sigmoid) with L2 regularization
+    x = layers.Dense(
+        32, 
+        activation='relu', 
+        kernel_regularizer=tf.keras.regularizers.l2(0.001)
+    )(x)
+    x = layers.Dropout(0.4)(x)
     
-    outputs = layers.Dense(1, activation='sigmoid')(x)
+    outputs = layers.Dense(
+        1, 
+        activation='sigmoid',
+        kernel_regularizer=tf.keras.regularizers.l2(0.001)
+    )(x)
     
     model = Model(inputs, outputs, name="CNN_Classifier")
     
@@ -47,7 +66,7 @@ def build_cnn_classifier():
         tf.keras.metrics.Recall(name='recall')
     ]
     
-    # Lower learning rate (0.0005) as requested
+    # Lower learning rate (0.0005)
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=0.0005),
         loss='binary_crossentropy',
@@ -82,7 +101,7 @@ def augment_light_curve(x):
     return x_aug
 
 def main():
-    print("--- Exoplanet AI Hackathon: CNN Classifier Training ---")
+    print("--- Exoplanet AI Hackathon: CNN Classifier Training (v2) ---")
     
     # 1. Load splits
     processed_dir = os.path.join("data", "processed")
@@ -138,8 +157,8 @@ def main():
     X_val_denoised = denoiser.predict(X_val[..., np.newaxis], batch_size=32, verbose=0)
     X_test_denoised = denoiser.predict(X_test[..., np.newaxis], batch_size=32, verbose=0)
     
-    # STEP 3: Data Augmentation
-    print("Performing data augmentation on training set (3x size)...")
+    # STEP 3: Data Augmentation (5x training variety)
+    print("Performing 5x data augmentation on training set...")
     X_train_augmented = []
     y_train_augmented = []
     
@@ -153,18 +172,23 @@ def main():
         # 3. Augmented copy 2
         X_train_augmented.append(augment_light_curve(X_train_denoised[i]))
         y_train_augmented.append(y_train[i])
+        # 4. Augmented copy 3
+        X_train_augmented.append(augment_light_curve(X_train_denoised[i]))
+        y_train_augmented.append(y_train[i])
+        # 5. Augmented copy 4
+        X_train_augmented.append(augment_light_curve(X_train_denoised[i]))
+        y_train_augmented.append(y_train[i])
         
     X_train_augmented = np.array(X_train_augmented)
     y_train_augmented = np.array(y_train_augmented)
     
-    # Center all dataset splits (subtract 0.5 to shift baseline from 0.5 to 0.0)
-    # This prevents baseline values from washing out the localized transit activations in GlobalAveragePooling1D
+    # Center all dataset splits (subtract 0.5)
     print("Centering datasets around 0.0...")
     X_train_final = X_train_augmented - 0.5
     X_val_final = X_val_denoised - 0.5
     X_test_final = X_test_denoised - 0.5
     
-    print(f"Data shapes after denoising, augmentation, and centering:")
+    print(f"Data shapes after denoising, 5x augmentation, and centering:")
     print(f"  Train Set: {X_train_final.shape} | Labels: {y_train_augmented.shape}")
     print(f"  Val Set:   {X_val_final.shape} | Labels: {y_val.shape}")
     print(f"  Test Set:  {X_test_final.shape} | Labels: {y_test.shape}")
@@ -173,7 +197,7 @@ def main():
     classifier = build_cnn_classifier()
     classifier.summary()
     
-    # Compute class weights (even though balanced, as safety net)
+    # Compute class weights (balanced)
     class_weights = compute_class_weight('balanced', classes=np.unique(y_train_augmented), y=y_train_augmented)
     class_weight_dict = dict(enumerate(class_weights))
     print(f"Computed class weights: {class_weight_dict}")
@@ -184,7 +208,7 @@ def main():
         ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=6, min_lr=1e-6, verbose=1)
     ]
     
-    # Train model (epochs=60, batch_size=8 as requested)
+    # Train model (epochs=60, batch_size=8)
     epochs = 60
     batch_size = 8
     print(f"\nTraining CNN classifier for up to {epochs} epochs...")
@@ -198,18 +222,49 @@ def main():
         verbose=1
     )
     
-    # 5. Evaluate on test set
-    print("\nEvaluating model on the held-out test set...")
-    test_eval = classifier.evaluate(X_test_final, y_test, batch_size=32, verbose=0)
-    loss = test_eval[0]
-    accuracy = test_eval[1]
-    precision = test_eval[2]
-    recall = test_eval[3]
-    f1 = 2 * (precision * recall) / (precision + recall + 1e-8)
+    # STEP 1: Decision Threshold Tuning on Validation Set
+    print("\nTuning decision threshold on validation set...")
+    y_val_pred_probs = classifier.predict(X_val_final, batch_size=32, verbose=0).flatten()
     
-    # Probability distribution check (STEP 4)
+    thresholds = np.arange(0.3, 0.71, 0.05)
+    best_threshold = 0.5
+    best_val_f1 = -1
+    
+    print("\n" + "="*60)
+    print("VALIDATION SET DECISION THRESHOLD TUNING")
+    print("="*60)
+    print(f"{'Threshold':<12} | {'Precision':<10} | {'Recall':<10} | {'F1 Score':<10}")
+    print("-" * 50)
+    
+    for th in thresholds:
+        y_val_pred_bin = (y_val_pred_probs >= th).astype(int)
+        prec, rec, f1, _ = precision_recall_fscore_support(y_val, y_val_pred_bin, average='binary', zero_division=0)
+        print(f"{th:<12.2f} | {prec:<10.4f} | {rec:<10.4f} | {f1:<10.4f}")
+        
+        if f1 > best_val_f1:
+            best_val_f1 = f1
+            best_threshold = th
+            
+    print("="*60)
+    print(f"Optimal Decision Threshold: {best_threshold:.2f} (Validation F1 Score: {best_val_f1:.4f})")
+    print("="*60 + "\n")
+    
+    # STEP 4: Evaluate on test set using the NEW optimal threshold
+    print("\nEvaluating model on the held-out test set with optimal threshold...")
     y_pred = classifier.predict(X_test_final, batch_size=32, verbose=0)
     y_pred_probs = y_pred.flatten()
+    
+    # Classify based on optimal threshold
+    y_pred_bin = (y_pred_probs >= best_threshold).astype(int)
+    
+    # Calculate test metrics using optimal threshold
+    test_acc = accuracy_score(y_test, y_pred_bin)
+    test_prec = precision_score(y_test, y_pred_bin, zero_division=0)
+    test_recall = recall_score(y_test, y_pred_bin, zero_division=0)
+    test_f1 = f1_score(y_test, y_pred_bin, zero_division=0)
+    
+    # STEP 2: Compute Test ROC-AUC
+    roc_auc = roc_auc_score(y_test, y_pred_probs)
     
     print("\n" + "="*50)
     print("STEP 4: PREDICTED PROBABILITY DISTRIBUTION ON TEST SET")
@@ -223,16 +278,16 @@ def main():
     print("="*50)
     
     print("\n" + "="*50)
-    print("TEST EVALUATION PERFORMANCE")
+    print(f"TEST EVALUATION PERFORMANCE (Threshold = {best_threshold:.2f})")
     print("="*50)
-    print(f"Test Accuracy:  {accuracy:.4f}")
-    print(f"Test Precision: {precision:.4f}")
-    print(f"Test Recall:    {recall:.4f}")
-    print(f"Test F1-Score:  {f1:.4f}")
+    print(f"Test Accuracy:  {test_acc:.4f}")
+    print(f"Test Precision: {test_prec:.4f}")
+    print(f"Test Recall:    {test_recall:.4f}")
+    print(f"Test F1-Score:  {test_f1:.4f}")
+    print(f"Test ROC-AUC:   {roc_auc:.4f}")
     print("="*50)
     
     # Confusion Matrix
-    y_pred_bin = (y_pred >= 0.5).astype(int).flatten()
     cm = confusion_matrix(y_test, y_pred_bin)
     print("\nConfusion Matrix:")
     print(f"  True Negatives (False Positives): {cm[0, 0]}")
@@ -248,7 +303,7 @@ def main():
            yticks=np.arange(cm.shape[0]),
            xticklabels=['False Positive (0)', 'Confirmed (1)'],
            yticklabels=['False Positive (0)', 'Confirmed (1)'],
-           title='CNN Classifier Confusion Matrix (Test Set)',
+           title=f'CNN Classifier Confusion Matrix (Threshold = {best_threshold:.2f})',
            ylabel='True Label',
            xlabel='Predicted Label')
     
@@ -264,6 +319,24 @@ def main():
     plt.savefig(cm_path, dpi=150)
     plt.close()
     print(f"\nSaved confusion matrix plot to {cm_path}")
+    
+    # STEP 2: Save ROC curve plot
+    fpr, tpr, _ = roc_curve(y_test, y_pred_probs)
+    plt.figure(figsize=(6, 5))
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {roc_auc:.4f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC) Curve')
+    plt.legend(loc="lower right")
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    roc_path = os.path.join("models", "roc_curve.png")
+    plt.savefig(roc_path, dpi=150)
+    plt.close()
+    print(f"Saved ROC curve plot to {roc_path}")
     
     # 6. Plot training history
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
